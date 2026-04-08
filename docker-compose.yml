@@ -13,7 +13,4 @@ services:
       DATABASE_PATH: /data/bitflow.db
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-change-this-key}
     volumes:
-      - bitflow_data:/data
-
-volumes:
-  bitflow_data:
+      - ${BITFLOW_DATA_PATH:-./data}:/data
