@@ -24,7 +24,7 @@ type ApiEnvelope<T> = {
 };
 
 type QbForm = DashboardSnapshot["qbittorrent"] & { password: string };
-type WebhookForm = DashboardSnapshot["webhook"] & { secret: string };
+type WebhookForm = Omit<DashboardSnapshot["webhook"], "publicBaseUrls"> & { secret: string; publicBaseUrlsText: string };
 type DeviceFormState = {
   id?: number;
   name: string;
@@ -73,7 +73,11 @@ export function DashboardShell() {
       setWebhookForm((current) =>
         current
           ? current
-          : { ...data.webhook, secret: "" }
+          : {
+              ...data.webhook,
+              secret: "",
+              publicBaseUrlsText: data.webhook.publicBaseUrls.join("\n")
+            }
       );
       setAutomationForm((current) => current ?? data.automation);
       setMonitoringForm((current) => current ?? data.monitoring);
@@ -90,12 +94,7 @@ export function DashboardShell() {
     return () => clearInterval(timer);
   }, []);
 
-  const webhookUrl = useMemo(() => {
-    if (!snapshot || typeof window === "undefined") {
-      return "";
-    }
-    return `${window.location.origin}${snapshot.derived.webhookUrlPath}`;
-  }, [snapshot]);
+  const webhookUrl = useMemo(() => snapshot?.derived.webhookUrls[0] ?? "", [snapshot]);
 
   const saveSection = async (key: string, url: string, body: unknown) => {
     setSaving(key);
@@ -330,7 +329,7 @@ export function DashboardShell() {
                   <p className="mt-1 font-medium">{formatDateTime(snapshot.state.lastWebhookAt)}</p>
                 </div>
                 <Field label="Token / route segment">
-                  <Input value={webhookForm.token} onChange={(event) => setWebhookForm((current) => current && ({ ...current, token: event.target.value }))} />
+                  <Input readOnly value={snapshot.derived.webhookUrlPath} />
                 </Field>
                 <Field label="Shared secret">
                   <Input type="password" value={webhookForm.secret} placeholder={snapshot.webhook.secretConfigured ? "Saved secret" : ""} onChange={(event) => setWebhookForm((current) => current && ({ ...current, secret: event.target.value }))} />
@@ -338,7 +337,7 @@ export function DashboardShell() {
                 <Field label="Webhook active window (seconds)">
                   <Input type="number" value={webhookForm.activityWindowSeconds} onChange={(event) => setWebhookForm((current) => current && ({ ...current, activityWindowSeconds: Number(event.target.value) || 0 }))} />
                 </Field>
-                <Field label="Webhook URL">
+                <Field label="Current webhook URL">
                   <div className="flex gap-2">
                     <Input readOnly value={webhookUrl} />
                     <Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(webhookUrl).then(() => toast.success("Webhook URL copied"))}>
@@ -346,11 +345,45 @@ export function DashboardShell() {
                     </Button>
                   </div>
                 </Field>
+                <Field label="Additional public base URLs">
+                  <Textarea
+                    value={webhookForm.publicBaseUrlsText}
+                    onChange={(event) => setWebhookForm((current) => current && ({ ...current, publicBaseUrlsText: event.target.value }))}
+                    placeholder={`https://bitflow.4sbs.net\nhttp://bitflow:3000`}
+                  />
+                </Field>
+                <div className="rounded-2xl border bg-muted/40 p-4 text-sm text-muted-foreground md:col-span-2">
+                  <p className="font-medium text-foreground">Stable endpoint</p>
+                  <p className="mt-1">Bitflow keeps this webhook path permanently unless you add explicit rotation support later.</p>
+                  <p className="mt-2">The same path works through any domain or hostname that points to this Bitflow instance.</p>
+                  {snapshot.derived.webhookUrls.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      {snapshot.derived.webhookUrls.map((url) => (
+                        <div key={url} className="flex gap-2">
+                          <Input readOnly value={url} />
+                          <Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(url).then(() => toast.success("Webhook URL copied"))}>
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </CardContent>
               <CardContent className="pt-6">
                 <div className="flex flex-wrap gap-3">
                   <Button
-                    onClick={() => void saveSection("webhook", "/api/settings/webhook", webhookForm)}
+                    onClick={() =>
+                      void saveSection("webhook", "/api/settings/webhook", {
+                        enabled: webhookForm.enabled,
+                        secret: webhookForm.secret,
+                        activityWindowSeconds: webhookForm.activityWindowSeconds,
+                        publicBaseUrls: webhookForm.publicBaseUrlsText
+                          .split(/\r?\n/)
+                          .map((value) => value.trim())
+                          .filter(Boolean)
+                      })
+                    }
                     disabled={saving === "webhook"}
                   >
                     <Save className="h-4 w-4" />

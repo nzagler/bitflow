@@ -15,6 +15,7 @@ export type WebhookSettings = {
   token: string;
   secret: string;
   activityWindowSeconds: number;
+  publicBaseUrls: string[];
 };
 
 export type AutomationSettings = {
@@ -73,5 +74,6 @@ export type DashboardSnapshot = {
     devicesActive: boolean;
     effectiveActive: boolean;
     webhookUrlPath: string;
+    webhookUrls: string[];
   };
 };

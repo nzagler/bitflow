@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DATABASE_PATH, DEFAULT_WEBHOOK_TOKEN, LOG_LIMIT } from "@/lib/constants";
@@ -30,7 +31,8 @@ const DEFAULT_WEBHOOK: WebhookSettings = {
   enabled: true,
   token: DEFAULT_WEBHOOK_TOKEN,
   secret: "",
-  activityWindowSeconds: 10
+  activityWindowSeconds: 10,
+  publicBaseUrls: []
 };
 
 const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -204,8 +206,13 @@ function parseWebhook(raw: string): WebhookSettings {
   return {
     ...DEFAULT_WEBHOOK,
     ...data,
+    publicBaseUrls: Array.isArray(data.publicBaseUrls) ? data.publicBaseUrls : [],
     secret: data.secret ? decryptSecret(data.secret) : ""
   };
+}
+
+function generateWebhookToken() {
+  return crypto.randomBytes(18).toString("base64url");
 }
 
 export function getQbittorrentSettings() {
@@ -217,7 +224,17 @@ export function saveQbittorrentSettings(value: QbittorrentSettings) {
 }
 
 export function getWebhookSettings() {
-  return getSetting("webhook", parseWebhook, DEFAULT_WEBHOOK);
+  const settings = getSetting("webhook", parseWebhook, DEFAULT_WEBHOOK);
+  if (!settings.token || settings.token === DEFAULT_WEBHOOK_TOKEN) {
+    const next = {
+      ...settings,
+      token: generateWebhookToken()
+    };
+    saveWebhookSettings(next);
+    return next;
+  }
+
+  return settings;
 }
 
 export function saveWebhookSettings(value: WebhookSettings) {
@@ -430,7 +447,7 @@ export function getLogs(limit = LOG_LIMIT): LogRecord[] {
   `).all(limit) as LogRecord[];
 }
 
-export function buildDashboardSnapshot(): DashboardSnapshot {
+export function buildDashboardSnapshot(baseOrigin?: string): DashboardSnapshot {
   const qbittorrent = getQbittorrentSettings();
   const webhook = getWebhookSettings();
   const automation = getAutomationSettings();
@@ -466,6 +483,7 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
       enabled: webhook.enabled,
       token: webhook.token,
       activityWindowSeconds: webhook.activityWindowSeconds,
+      publicBaseUrls: webhook.publicBaseUrls,
       secretConfigured: Boolean(webhook.secret)
     },
     automation,
@@ -476,7 +494,11 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
       streamingActive,
       devicesActive,
       effectiveActive: streamingActive || devicesActive,
-      webhookUrlPath: `/api/webhook/${webhook.token}`
+      webhookUrlPath: `/api/webhook/${webhook.token}`,
+      webhookUrls: [
+        ...(baseOrigin ? [`${baseOrigin}/api/webhook/${webhook.token}`] : []),
+        ...webhook.publicBaseUrls.map((baseUrl) => `${baseUrl.replace(/\/+$/, "")}/api/webhook/${webhook.token}`)
+      ]
     }
   };
 }
