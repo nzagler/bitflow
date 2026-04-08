@@ -125,13 +125,26 @@ export async function evaluateAutomation(reason = "scheduler") {
   }
 }
 
-export async function registerWebhookActivity(metadata?: unknown) {
+export async function registerWebhookActivity(source = "jellyfin") {
+  const webhook = getWebhookSettings();
+  const previousState = getState();
   const now = new Date().toISOString();
+  const previousActivityAge = previousState.lastWebhookAt
+    ? Date.now() - new Date(previousState.lastWebhookAt).getTime()
+    : Number.POSITIVE_INFINITY;
+  const wasStreamingActive = previousActivityAge <= webhook.activityWindowSeconds * 1000;
+
   updateState({
     lastWebhookAt: now
   });
-  addLog("info", "webhook_received", "Received Jellyfin webhook activity", metadata);
-  await evaluateAutomation("webhook activity");
+
+  if (!wasStreamingActive) {
+    addLog("info", "webhook_activity_started", "Received webhook activity and marked streaming as active", { source });
+  }
+
+  if (previousState.qbittorrentMode !== "throttled") {
+    await evaluateAutomation("webhook activity");
+  }
 }
 
 export async function startAutomation() {

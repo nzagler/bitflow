@@ -25,14 +25,7 @@ async function handleWebhook(request: Request, params: { token: string }) {
     return fail("Webhook secret mismatch", 401);
   }
 
-  let payload: unknown = null;
-  try {
-    payload = await request.json();
-  } catch {
-    payload = { note: "No JSON payload" };
-  }
-
-  await registerWebhookActivity(payload);
+  await registerWebhookActivity("jellyfin");
   return ok({ received: true });
 }
 

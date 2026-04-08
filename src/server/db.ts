@@ -119,6 +119,14 @@ export function initializeDatabase() {
     );
   `);
 
+  // Older versions stored raw Jellyfin webhook payloads in log metadata.
+  // Clear that metadata on startup so playback/user details are not retained.
+  database.prepare(`
+    UPDATE logs
+    SET metadata = NULL
+    WHERE event_type = 'webhook_received'
+  `).run();
+
   ensureSetting("qbittorrent", serializeQbittorrent(DEFAULT_QBITTORRENT));
   ensureSetting("webhook", serializeWebhook(DEFAULT_WEBHOOK));
   ensureSetting("automation", JSON.stringify(DEFAULT_AUTOMATION));

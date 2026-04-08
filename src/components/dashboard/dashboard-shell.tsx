@@ -349,7 +349,7 @@ export function DashboardShell() {
                   <Textarea
                     value={webhookForm.publicBaseUrlsText}
                     onChange={(event) => setWebhookForm((current) => current && ({ ...current, publicBaseUrlsText: event.target.value }))}
-                    placeholder={`https://bitflow.4sbs.net\nhttp://bitflow:3000`}
+                    placeholder="One base URL per line"
                   />
                 </Field>
                 <div className="rounded-2xl border bg-muted/40 p-4 text-sm text-muted-foreground md:col-span-2">
