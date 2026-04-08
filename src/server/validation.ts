@@ -12,9 +12,9 @@ export const qbittorrentSchema = z.object({
 
 export const webhookSchema = z.object({
   enabled: z.coerce.boolean(),
+  token: z.string().trim().min(3).max(120).regex(/^[A-Za-z0-9-_]+$/),
   secret: z.string().max(500),
-  activityWindowSeconds: z.coerce.number().int().min(2).max(3600),
-  publicBaseUrls: z.array(z.string().trim().url()).max(20).default([])
+  activityWindowSeconds: z.coerce.number().int().min(2).max(3600)
 });
 
 export const automationSchema = z.object({

@@ -20,9 +20,7 @@ export async function PUT(request: Request) {
     const input = webhookSchema.parse(await readJson(request));
     const existing = getWebhookSettings();
     saveWebhookSettings({
-      ...existing,
       ...input,
-      token: existing.token,
       secret: input.secret || existing.secret
     });
     await evaluateAutomation("webhook settings updated");
