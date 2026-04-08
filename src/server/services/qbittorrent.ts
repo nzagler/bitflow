@@ -1,4 +1,4 @@
-import type { QbittorrentMode } from "@/lib/types";
+import type { QbittorrentMode, QbittorrentSettings } from "@/lib/types";
 import { getQbittorrentSettings, updateState } from "@/server/db";
 
 type Limits = {
@@ -56,7 +56,10 @@ async function sendForm(hostUrl: string, cookie: string, path: string, body: Rec
 }
 
 export async function testQbittorrentConnection() {
-  const settings = getQbittorrentSettings();
+  return testQbittorrentConnectionWithSettings(getQbittorrentSettings());
+}
+
+export async function testQbittorrentConnectionWithSettings(settings: Pick<QbittorrentSettings, "hostUrl" | "username" | "password">) {
   if (!settings.hostUrl || !settings.username || !settings.password) {
     throw new Error("qBittorrent host URL, username, and password are required");
   }

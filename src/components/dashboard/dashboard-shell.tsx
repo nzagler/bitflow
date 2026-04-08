@@ -301,7 +301,25 @@ export function DashboardShell() {
                     <Save className="h-4 w-4" />
                     Save qBittorrent
                   </Button>
-                  <Button variant="outline" onClick={() => void runAction("/api/settings/qbittorrent/test", "POST", undefined, "qBittorrent connection OK")}>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      void runAction(
+                        "/api/settings/qbittorrent/test",
+                        "POST",
+                        {
+                          hostUrl: qbForm.hostUrl,
+                          username: qbForm.username,
+                          password: qbForm.password,
+                          throttledUploadLimit: qbForm.throttledUploadLimit,
+                          throttledDownloadLimit: qbForm.throttledDownloadLimit,
+                          normalUploadLimit: qbForm.normalUploadLimit,
+                          normalDownloadLimit: qbForm.normalDownloadLimit
+                        },
+                        "qBittorrent connection OK"
+                      )
+                    }
+                  >
                     <TestTube2 className="h-4 w-4" />
                     Test connection
                   </Button>
