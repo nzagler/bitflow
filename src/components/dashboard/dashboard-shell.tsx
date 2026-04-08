@@ -194,7 +194,13 @@ export function DashboardShell() {
           <StatusCard title="Streaming" value={snapshot.derived.streamingActive ? "Active" : "Idle"} hint={`Last webhook: ${formatDateTime(snapshot.state.lastWebhookAt)}`} icon={PlayCircle} active={snapshot.derived.streamingActive} />
           <StatusCard title="Devices" value={snapshot.derived.devicesActive ? "Activity seen" : "Idle"} hint={`Last device activity: ${formatDateTime(snapshot.state.lastDeviceActivityAt)}`} icon={Router} active={snapshot.derived.devicesActive} />
           <StatusCard title="qBittorrent" value={snapshot.state.qbittorrentMode} hint={snapshot.state.lastThrottleAction ?? "No action applied yet"} icon={Wifi} active={snapshot.state.qbittorrentMode === "throttled"} />
-          <StatusCard title="Controller" value={snapshot.derived.effectiveActive ? "Throttling" : "Normal"} hint={`Last evaluation: ${formatDateTime(snapshot.state.lastEvaluatedAt)}`} icon={Activity} active={snapshot.derived.effectiveActive} />
+          <StatusCard
+            title="Controller"
+            value={snapshot.derived.streamingActive || snapshot.derived.devicesActive ? "Active" : snapshot.derived.cooldownActive ? "Cooldown" : "Normal"}
+            hint={snapshot.derived.cooldownActive ? `Unthrottle cooldown: ${snapshot.automation.inactivityTimeoutMinutes} min` : `Last evaluation: ${formatDateTime(snapshot.state.lastEvaluatedAt)}`}
+            icon={Activity}
+            active={snapshot.derived.effectiveActive}
+          />
         </div>
 
         <Tabs defaultValue="dashboard">
@@ -487,10 +493,10 @@ export function DashboardShell() {
             <Card>
               <CardHeader>
                 <CardTitle>Automation settings</CardTitle>
-                <CardDescription>Control the inactivity window and the background scheduler cadence.</CardDescription>
+                <CardDescription>Control how long Bitflow stays throttled after activity stops and how often background checks run.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 md:grid-cols-3">
-                <Field label="Inactivity timeout (minutes)">
+                <Field label="Cooldown before unthrottle (minutes)">
                   <Input type="number" value={automationForm.inactivityTimeoutMinutes} onChange={(event) => setAutomationForm((current) => current && ({ ...current, inactivityTimeoutMinutes: Number(event.target.value) || 0 }))} />
                 </Field>
                 <Field label="Ping interval (seconds)">

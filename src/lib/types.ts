@@ -71,6 +71,7 @@ export type DashboardSnapshot = {
   derived: {
     streamingActive: boolean;
     devicesActive: boolean;
+    cooldownActive: boolean;
     effectiveActive: boolean;
     webhookUrlPath: string;
   };

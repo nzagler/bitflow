@@ -446,6 +446,7 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
   const state = getState();
   const devices = getDevices();
   const now = Date.now();
+  const cooldownMs = automation.inactivityTimeoutMinutes * 60 * 1000;
 
   const streamingActive = Boolean(
     webhook.enabled &&
@@ -453,10 +454,25 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     now - new Date(state.lastWebhookAt).getTime() <= webhook.activityWindowSeconds * 1000
   );
 
-  const devicesActive = Boolean(
+  const deviceRecentlySeen = Boolean(
     monitoring.enabled &&
     state.lastDeviceActivityAt &&
-    now - new Date(state.lastDeviceActivityAt).getTime() <= automation.inactivityTimeoutMinutes * 60 * 1000
+    now - new Date(state.lastDeviceActivityAt).getTime() <= Math.max(automation.pingIntervalSeconds * 2 * 1000, 15_000)
+  );
+
+  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((value) => !Number.isNaN(value))
+    .sort((left, right) => right - left)[0];
+
+  const cooldownActive = Boolean(
+    latestActivityAt &&
+    now - latestActivityAt <= cooldownMs
+  );
+
+  const devicesActive = Boolean(
+    monitoring.enabled && deviceRecentlySeen
   );
 
   return {
@@ -483,7 +499,8 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     derived: {
       streamingActive,
       devicesActive,
-      effectiveActive: streamingActive || devicesActive,
+      cooldownActive,
+      effectiveActive: streamingActive || devicesActive || cooldownActive,
       webhookUrlPath: `/api/webhook/${webhook.token}`
     }
   };
