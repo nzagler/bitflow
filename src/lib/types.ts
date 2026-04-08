@@ -72,6 +72,7 @@ export type DashboardSnapshot = {
     streamingActive: boolean;
     devicesActive: boolean;
     cooldownActive: boolean;
+    cooldownRemainingSeconds: number;
     effectiveActive: boolean;
     webhookUrlPath: string;
   };

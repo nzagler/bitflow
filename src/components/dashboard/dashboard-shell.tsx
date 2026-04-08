@@ -60,6 +60,7 @@ export function DashboardShell() {
   const [monitoringForm, setMonitoringForm] = useState<DeviceMonitoringSettings | null>(null);
   const [deviceDialogOpen, setDeviceDialogOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState<DeviceFormState>({ name: "", host: "", enabled: true });
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const refresh = async () => {
     try {
@@ -90,12 +91,36 @@ export function DashboardShell() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const webhookUrl = useMemo(() => {
     if (!snapshot || typeof window === "undefined") {
       return "";
     }
     return `${window.location.origin}${snapshot.derived.webhookUrlPath}`;
   }, [snapshot]);
+
+  const liveCooldownRemainingSeconds = useMemo(() => {
+    if (!snapshot?.derived.cooldownActive) {
+      return 0;
+    }
+
+    const lastActivityTimes = [snapshot.state.lastWebhookAt, snapshot.state.lastDeviceActivityAt]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new Date(value).getTime())
+      .filter((value) => !Number.isNaN(value));
+
+    const latestActivityAt = lastActivityTimes.length > 0 ? Math.max(...lastActivityTimes) : null;
+    if (!latestActivityAt) {
+      return snapshot.derived.cooldownRemainingSeconds;
+    }
+
+    const remaining = snapshot.automation.inactivityTimeoutMinutes * 60 - Math.floor((nowTick - latestActivityAt) / 1000);
+    return Math.max(0, remaining);
+  }, [nowTick, snapshot]);
 
   const saveSection = async (key: string, url: string, body: unknown) => {
     setSaving(key);
@@ -197,7 +222,7 @@ export function DashboardShell() {
           <StatusCard
             title="Controller"
             value={snapshot.derived.streamingActive || snapshot.derived.devicesActive ? "Active" : snapshot.derived.cooldownActive ? "Cooldown" : "Normal"}
-            hint={snapshot.derived.cooldownActive ? `Unthrottle cooldown: ${snapshot.automation.inactivityTimeoutMinutes} min` : `Last evaluation: ${formatDateTime(snapshot.state.lastEvaluatedAt)}`}
+            hint={snapshot.derived.cooldownActive ? `Unthrottle cooldown: ${formatDuration(liveCooldownRemainingSeconds)}` : `Last evaluation: ${formatDateTime(snapshot.state.lastEvaluatedAt)}`}
             icon={Activity}
             active={snapshot.derived.effectiveActive}
           />
@@ -602,4 +627,10 @@ function LimitRow({ label, value }: { label: string; value: string }) {
       <span className="font-medium">{value}</span>
     </div>
   );
+}
+
+function formatDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }

@@ -470,6 +470,9 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     latestActivityAt &&
     now - latestActivityAt <= cooldownMs
   );
+  const cooldownRemainingSeconds = latestActivityAt
+    ? Math.max(0, Math.ceil((cooldownMs - (now - latestActivityAt)) / 1000))
+    : 0;
 
   const devicesActive = Boolean(
     monitoring.enabled && deviceRecentlySeen
@@ -500,6 +503,7 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
       streamingActive,
       devicesActive,
       cooldownActive,
+      cooldownRemainingSeconds,
       effectiveActive: streamingActive || devicesActive || cooldownActive,
       webhookUrlPath: `/api/webhook/${webhook.token}`
     }
