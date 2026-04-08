@@ -57,8 +57,13 @@ const DEFAULT_STATE: AppState = {
 
 function getDb() {
   if (!database) {
-    throw new Error("Database has not been initialized");
+    initializeDatabase();
   }
+
+  if (!database) {
+    throw new Error("Database initialization failed");
+  }
+
   return database;
 }
 
