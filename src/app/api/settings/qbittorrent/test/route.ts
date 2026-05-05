@@ -11,8 +11,7 @@ export async function POST(request: Request) {
       const existing = getQbittorrentSettings();
       version = await testQbittorrentConnectionWithSettings({
         hostUrl: input.hostUrl ?? existing.hostUrl,
-        username: input.username ?? existing.username,
-        password: input.password || existing.password
+        apiKey: input.apiKey || existing.apiKey
       });
     } catch {
       version = await testQbittorrentConnection();

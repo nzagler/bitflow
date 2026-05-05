@@ -104,7 +104,7 @@ export async function evaluateAutomation(reason = "scheduler") {
       lastEvaluatedAt: new Date().toISOString()
     });
 
-    if (!qbittorrent.hostUrl || !qbittorrent.username || !qbittorrent.password) {
+    if (!qbittorrent.hostUrl || !qbittorrent.apiKey) {
       if (currentState.lastQbittorrentError !== "qBittorrent is not configured") {
         updateState({
           lastQbittorrentError: "qBittorrent is not configured"

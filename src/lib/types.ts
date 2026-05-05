@@ -2,8 +2,7 @@ export type QbittorrentMode = "throttled" | "normal" | "unknown";
 
 export type QbittorrentSettings = {
   hostUrl: string;
-  username: string;
-  password: string;
+  apiKey: string;
   throttledUploadLimit: number;
   throttledDownloadLimit: number;
   normalUploadLimit: number;
@@ -62,7 +61,7 @@ export type LogRecord = {
 
 export type DashboardSnapshot = {
   state: AppState;
-  qbittorrent: Omit<QbittorrentSettings, "password"> & { passwordConfigured: boolean };
+  qbittorrent: Omit<QbittorrentSettings, "apiKey"> & { apiKeyConfigured: boolean };
   webhook: Omit<WebhookSettings, "secret"> & { secretConfigured: boolean };
   automation: AutomationSettings;
   monitoring: DeviceMonitoringSettings;

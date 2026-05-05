@@ -23,7 +23,7 @@ type ApiEnvelope<T> = {
   error?: string;
 };
 
-type QbForm = DashboardSnapshot["qbittorrent"] & { password: string };
+type QbForm = DashboardSnapshot["qbittorrent"] & { apiKey: string };
 type WebhookForm = DashboardSnapshot["webhook"] & { secret: string };
 type DeviceFormState = {
   id?: number;
@@ -69,7 +69,7 @@ export function DashboardShell() {
       setQbForm((current) =>
         current
           ? current
-          : { ...data.qbittorrent, password: "" }
+          : { ...data.qbittorrent, apiKey: "" }
       );
       setWebhookForm((current) =>
         current
@@ -299,11 +299,8 @@ export function DashboardShell() {
                 <Field label="Host URL">
                   <Input value={qbForm.hostUrl} onChange={(event) => setQbForm((current) => current && ({ ...current, hostUrl: event.target.value }))} placeholder="http://qbittorrent:8080" />
                 </Field>
-                <Field label="Username">
-                  <Input value={qbForm.username} onChange={(event) => setQbForm((current) => current && ({ ...current, username: event.target.value }))} />
-                </Field>
-                <Field label="Password">
-                  <Input type="password" value={qbForm.password} placeholder={snapshot.qbittorrent.passwordConfigured ? "Saved password" : ""} onChange={(event) => setQbForm((current) => current && ({ ...current, password: event.target.value }))} />
+                <Field label="API key">
+                  <Input type="password" value={qbForm.apiKey} placeholder={snapshot.qbittorrent.apiKeyConfigured ? "Saved API key" : "qbt_..."} onChange={(event) => setQbForm((current) => current && ({ ...current, apiKey: event.target.value }))} />
                 </Field>
                 <div className="rounded-2xl border bg-muted/40 p-4 text-sm text-muted-foreground">
                   Connection status
@@ -341,8 +338,7 @@ export function DashboardShell() {
                         "POST",
                         {
                           hostUrl: qbForm.hostUrl,
-                          username: qbForm.username,
-                          password: qbForm.password,
+                          apiKey: qbForm.apiKey,
                           throttledUploadLimit: qbForm.throttledUploadLimit,
                           throttledDownloadLimit: qbForm.throttledDownloadLimit,
                           normalUploadLimit: qbForm.normalUploadLimit,

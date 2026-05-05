@@ -10,41 +10,17 @@ function buildBaseUrl(hostUrl: string) {
   return hostUrl.replace(/\/+$/, "");
 }
 
-async function login(hostUrl: string, username: string, password: string) {
-  const response = await fetch(`${buildBaseUrl(hostUrl)}/api/v2/auth/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({
-      username,
-      password
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`qBittorrent login failed with status ${response.status}`);
-  }
-
-  const text = await response.text();
-  if (!text.includes("Ok")) {
-    throw new Error("qBittorrent rejected the provided credentials");
-  }
-
-  const setCookie = response.headers.get("set-cookie");
-  const cookieHeader = setCookie?.split(";")[0] ?? "";
-  if (!cookieHeader) {
-    throw new Error("qBittorrent did not return a session cookie");
-  }
-
-  return cookieHeader;
+function buildAuthHeaders(apiKey: string) {
+  return {
+    Authorization: `Bearer ${apiKey}`
+  };
 }
 
-async function sendForm(hostUrl: string, cookie: string, path: string, body: Record<string, string>) {
+async function sendForm(hostUrl: string, apiKey: string, path: string, body: Record<string, string>) {
   const response = await fetch(`${buildBaseUrl(hostUrl)}${path}`, {
     method: "POST",
     headers: {
-      Cookie: cookie,
+      ...buildAuthHeaders(apiKey),
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: new URLSearchParams(body)
@@ -59,16 +35,13 @@ export async function testQbittorrentConnection() {
   return testQbittorrentConnectionWithSettings(getQbittorrentSettings());
 }
 
-export async function testQbittorrentConnectionWithSettings(settings: Pick<QbittorrentSettings, "hostUrl" | "username" | "password">) {
-  if (!settings.hostUrl || !settings.username || !settings.password) {
-    throw new Error("qBittorrent host URL, username, and password are required");
+export async function testQbittorrentConnectionWithSettings(settings: Pick<QbittorrentSettings, "hostUrl" | "apiKey">) {
+  if (!settings.hostUrl || !settings.apiKey) {
+    throw new Error("qBittorrent host URL and API key are required");
   }
 
-  const cookie = await login(settings.hostUrl, settings.username, settings.password);
   const response = await fetch(`${buildBaseUrl(settings.hostUrl)}/api/v2/app/version`, {
-    headers: {
-      Cookie: cookie
-    }
+    headers: buildAuthHeaders(settings.apiKey)
   });
 
   if (!response.ok) {
@@ -101,17 +74,16 @@ function getLimitsForMode(mode: QbittorrentMode) {
 
 export async function applyQbittorrentMode(mode: Exclude<QbittorrentMode, "unknown">) {
   const settings = getQbittorrentSettings();
-  if (!settings.hostUrl || !settings.username || !settings.password) {
+  if (!settings.hostUrl || !settings.apiKey) {
     throw new Error("qBittorrent is not configured");
   }
 
-  const cookie = await login(settings.hostUrl, settings.username, settings.password);
   const limits = getLimitsForMode(mode);
 
-  await sendForm(settings.hostUrl, cookie, "/api/v2/transfer/setUploadLimit", {
+  await sendForm(settings.hostUrl, settings.apiKey, "/api/v2/transfer/setUploadLimit", {
     limit: String(limits.upload)
   });
-  await sendForm(settings.hostUrl, cookie, "/api/v2/transfer/setDownloadLimit", {
+  await sendForm(settings.hostUrl, settings.apiKey, "/api/v2/transfer/setDownloadLimit", {
     limit: String(limits.download)
   });
 

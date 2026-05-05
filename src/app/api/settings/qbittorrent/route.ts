@@ -8,7 +8,7 @@ export async function GET() {
     const settings = getQbittorrentSettings();
     return ok({
       ...settings,
-      password: ""
+      apiKey: ""
     });
   } catch (error) {
     return handleApiError(error);
@@ -21,7 +21,7 @@ export async function PUT(request: Request) {
     const existing = getQbittorrentSettings();
     saveQbittorrentSettings({
       ...input,
-      password: input.password || existing.password
+      apiKey: input.apiKey || existing.apiKey
     });
     await evaluateAutomation("qBittorrent settings updated");
     return ok({ saved: true });

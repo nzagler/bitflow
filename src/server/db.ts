@@ -18,8 +18,7 @@ let database: Database.Database | null = null;
 
 const DEFAULT_QBITTORRENT: QbittorrentSettings = {
   hostUrl: "",
-  username: "",
-  password: "",
+  apiKey: "",
   throttledUploadLimit: 1,
   throttledDownloadLimit: 1,
   normalUploadLimit: 3_000_000,
@@ -187,16 +186,16 @@ function setSetting(key: string, value: string) {
 function serializeQbittorrent(value: QbittorrentSettings) {
   return JSON.stringify({
     ...value,
-    password: value.password ? encryptSecret(value.password) : ""
+    apiKey: value.apiKey ? encryptSecret(value.apiKey) : ""
   });
 }
 
 function parseQbittorrent(raw: string): QbittorrentSettings {
-  const data = JSON.parse(raw) as Omit<QbittorrentSettings, "password"> & { password: string };
+  const data = JSON.parse(raw) as Partial<Omit<QbittorrentSettings, "apiKey"> & { apiKey: string; password: string }>;
   return {
     ...DEFAULT_QBITTORRENT,
     ...data,
-    password: data.password ? decryptSecret(data.password) : ""
+    apiKey: data.apiKey ? decryptSecret(data.apiKey) : ""
   };
 }
 
@@ -482,12 +481,11 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     state,
     qbittorrent: {
       hostUrl: qbittorrent.hostUrl,
-      username: qbittorrent.username,
       throttledUploadLimit: qbittorrent.throttledUploadLimit,
       throttledDownloadLimit: qbittorrent.throttledDownloadLimit,
       normalUploadLimit: qbittorrent.normalUploadLimit,
       normalDownloadLimit: qbittorrent.normalDownloadLimit,
-      passwordConfigured: Boolean(qbittorrent.password)
+      apiKeyConfigured: Boolean(qbittorrent.apiKey)
     },
     webhook: {
       enabled: webhook.enabled,
