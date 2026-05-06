@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { AutomationSettings, DashboardSnapshot, DeviceMonitoringSettings, DeviceRecord } from "@/lib/types";
+import { MASKED_SECRET_VALUE } from "@/lib/secret-placeholders";
 import { bytesPerSecondLabel, cn, formatDateTime } from "@/lib/utils";
 
 type ApiEnvelope<T> = {
@@ -69,7 +70,7 @@ export function DashboardShell() {
       setQbForm((current) =>
         current
           ? current
-          : { ...data.qbittorrent, apiKey: "" }
+          : { ...data.qbittorrent, apiKey: data.qbittorrent.apiKeyConfigured ? MASKED_SECRET_VALUE : "" }
       );
       setWebhookForm((current) =>
         current
@@ -108,7 +109,7 @@ export function DashboardShell() {
       return 0;
     }
 
-    const lastActivityTimes = [snapshot.state.lastWebhookAt, snapshot.state.lastDeviceActivityAt]
+    const lastActivityTimes = [snapshot.state.lastWebhookAt, snapshot.state.lastDeviceActivityAt, snapshot.state.lastManualThrottleAt]
       .filter((value): value is string => Boolean(value))
       .map((value) => new Date(value).getTime())
       .filter((value) => !Number.isNaN(value));
@@ -129,6 +130,13 @@ export function DashboardShell() {
         method: "PUT",
         body: JSON.stringify(body)
       });
+      if (key === "qbittorrent") {
+        setQbForm((current) =>
+          current
+            ? { ...current, apiKey: current.apiKey ? MASKED_SECRET_VALUE : "" }
+            : current
+        );
+      }
       toast.success("Settings saved");
       await refresh();
     } catch (error) {
@@ -297,10 +305,13 @@ export function DashboardShell() {
               </CardHeader>
               <CardContent className="grid gap-6 md:grid-cols-2">
                 <Field label="Host URL">
-                  <Input value={qbForm.hostUrl} onChange={(event) => setQbForm((current) => current && ({ ...current, hostUrl: event.target.value }))} placeholder="http://qbittorrent:8080" />
+                  <Input value={qbForm.hostUrl} onChange={(event) => setQbForm((current) => current && ({ ...current, hostUrl: event.target.value }))} placeholder="http://qbittorrent:8080 or http://qui:7476" />
+                </Field>
+                <Field label="URL base">
+                  <Input value={qbForm.urlBase} onChange={(event) => setQbForm((current) => current && ({ ...current, urlBase: event.target.value }))} placeholder="/proxy/abc123..." />
                 </Field>
                 <Field label="API key">
-                  <Input type="password" value={qbForm.apiKey} placeholder={snapshot.qbittorrent.apiKeyConfigured ? "Saved API key" : "qbt_..."} onChange={(event) => setQbForm((current) => current && ({ ...current, apiKey: event.target.value }))} />
+                  <Input type="password" value={qbForm.apiKey} placeholder={snapshot.qbittorrent.apiKeyConfigured ? "Saved API key" : "Optional"} onChange={(event) => setQbForm((current) => current && ({ ...current, apiKey: event.target.value }))} />
                 </Field>
                 <div className="rounded-2xl border bg-muted/40 p-4 text-sm text-muted-foreground">
                   Connection status
@@ -338,6 +349,7 @@ export function DashboardShell() {
                         "POST",
                         {
                           hostUrl: qbForm.hostUrl,
+                          urlBase: qbForm.urlBase,
                           apiKey: qbForm.apiKey,
                           throttledUploadLimit: qbForm.throttledUploadLimit,
                           throttledDownloadLimit: qbForm.throttledDownloadLimit,

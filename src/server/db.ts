@@ -18,6 +18,7 @@ let database: Database.Database | null = null;
 
 const DEFAULT_QBITTORRENT: QbittorrentSettings = {
   hostUrl: "",
+  urlBase: "",
   apiKey: "",
   throttledUploadLimit: 1,
   throttledDownloadLimit: 1,
@@ -47,6 +48,7 @@ const DEFAULT_STATE: AppState = {
   qbittorrentMode: "unknown",
   lastWebhookAt: null,
   lastDeviceActivityAt: null,
+  lastManualThrottleAt: null,
   lastThrottleActionAt: null,
   lastThrottleAction: null,
   lastQbittorrentConnectionAt: null,
@@ -99,6 +101,7 @@ export function initializeDatabase() {
       qbittorrent_mode TEXT NOT NULL,
       last_webhook_at TEXT,
       last_device_activity_at TEXT,
+      last_manual_throttle_at TEXT,
       last_throttle_action_at TEXT,
       last_throttle_action TEXT,
       last_qbittorrent_connection_at TEXT,
@@ -115,6 +118,8 @@ export function initializeDatabase() {
       created_at TEXT NOT NULL
     );
   `);
+
+  ensureColumn("app_state", "last_manual_throttle_at", "TEXT");
 
   // Older versions stored raw Jellyfin webhook payloads in log metadata.
   // Clear that metadata on startup so playback/user details are not retained.
@@ -137,6 +142,7 @@ export function initializeDatabase() {
         qbittorrent_mode,
         last_webhook_at,
         last_device_activity_at,
+        last_manual_throttle_at,
         last_throttle_action_at,
         last_throttle_action,
         last_qbittorrent_connection_at,
@@ -147,6 +153,7 @@ export function initializeDatabase() {
         @qbittorrentMode,
         @lastWebhookAt,
         @lastDeviceActivityAt,
+        @lastManualThrottleAt,
         @lastThrottleActionAt,
         @lastThrottleAction,
         @lastQbittorrentConnectionAt,
@@ -161,6 +168,13 @@ export function initializeDatabase() {
 
 function ensureSetting(key: string, value: string) {
   getDb().prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+}
+
+function ensureColumn(table: string, column: string, definition: string) {
+  const rows = getDb().prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!rows.some((row) => row.name === column)) {
+    getDb().prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  }
 }
 
 function getSetting<T>(key: string, parser: (raw: string) => T, fallback: T) {
@@ -362,6 +376,7 @@ export function getState(): AppState {
       qbittorrent_mode as qbittorrentMode,
       last_webhook_at as lastWebhookAt,
       last_device_activity_at as lastDeviceActivityAt,
+      last_manual_throttle_at as lastManualThrottleAt,
       last_throttle_action_at as lastThrottleActionAt,
       last_throttle_action as lastThrottleAction,
       last_qbittorrent_connection_at as lastQbittorrentConnectionAt,
@@ -387,6 +402,7 @@ export function updateState(partial: Partial<AppState>) {
       qbittorrent_mode = @qbittorrentMode,
       last_webhook_at = @lastWebhookAt,
       last_device_activity_at = @lastDeviceActivityAt,
+      last_manual_throttle_at = @lastManualThrottleAt,
       last_throttle_action_at = @lastThrottleActionAt,
       last_throttle_action = @lastThrottleAction,
       last_qbittorrent_connection_at = @lastQbittorrentConnectionAt,
@@ -459,7 +475,7 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     now - new Date(state.lastDeviceActivityAt).getTime() <= Math.max(automation.pingIntervalSeconds * 2 * 1000, 15_000)
   );
 
-  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt]
+  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt, state.lastManualThrottleAt]
     .filter((value): value is string => Boolean(value))
     .map((value) => new Date(value).getTime())
     .filter((value) => !Number.isNaN(value))
@@ -481,6 +497,7 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     state,
     qbittorrent: {
       hostUrl: qbittorrent.hostUrl,
+      urlBase: qbittorrent.urlBase,
       throttledUploadLimit: qbittorrent.throttledUploadLimit,
       throttledDownloadLimit: qbittorrent.throttledDownloadLimit,
       normalUploadLimit: qbittorrent.normalUploadLimit,

@@ -1,4 +1,5 @@
 import { readJson, ok, handleApiError } from "@/server/api";
+import { MASKED_SECRET_VALUE } from "@/lib/secret-placeholders";
 import { getQbittorrentSettings, saveQbittorrentSettings } from "@/server/db";
 import { evaluateAutomation } from "@/server/services/automation";
 import { qbittorrentSchema } from "@/server/validation";
@@ -21,7 +22,7 @@ export async function PUT(request: Request) {
     const existing = getQbittorrentSettings();
     saveQbittorrentSettings({
       ...input,
-      apiKey: input.apiKey || existing.apiKey
+      apiKey: input.apiKey === MASKED_SECRET_VALUE ? existing.apiKey : input.apiKey
     });
     await evaluateAutomation("qBittorrent settings updated");
     return ok({ saved: true });

@@ -65,7 +65,7 @@ export function computeEffectiveActivity(now = Date.now()) {
     now - new Date(state.lastDeviceActivityAt).getTime() <= Math.max(automation.pingIntervalSeconds * 2 * 1000, 15_000)
   );
 
-  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt]
+  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt, state.lastManualThrottleAt]
     .filter((value): value is string => Boolean(value))
     .map((value) => new Date(value).getTime())
     .filter((value) => !Number.isNaN(value))
@@ -104,7 +104,7 @@ export async function evaluateAutomation(reason = "scheduler") {
       lastEvaluatedAt: new Date().toISOString()
     });
 
-    if (!qbittorrent.hostUrl || !qbittorrent.apiKey) {
+    if (!qbittorrent.hostUrl) {
       if (currentState.lastQbittorrentError !== "qBittorrent is not configured") {
         updateState({
           lastQbittorrentError: "qBittorrent is not configured"

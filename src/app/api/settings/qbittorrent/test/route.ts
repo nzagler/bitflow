@@ -1,4 +1,5 @@
 import { ok, handleApiError, readJson } from "@/server/api";
+import { MASKED_SECRET_VALUE } from "@/lib/secret-placeholders";
 import { addLog, getQbittorrentSettings } from "@/server/db";
 import { testQbittorrentConnection, testQbittorrentConnectionWithSettings } from "@/server/services/qbittorrent";
 import { qbittorrentSchema } from "@/server/validation";
@@ -11,7 +12,8 @@ export async function POST(request: Request) {
       const existing = getQbittorrentSettings();
       version = await testQbittorrentConnectionWithSettings({
         hostUrl: input.hostUrl ?? existing.hostUrl,
-        apiKey: input.apiKey || existing.apiKey
+        urlBase: input.urlBase ?? existing.urlBase,
+        apiKey: input.apiKey === MASKED_SECRET_VALUE ? existing.apiKey : input.apiKey ?? existing.apiKey
       });
     } catch {
       version = await testQbittorrentConnection();

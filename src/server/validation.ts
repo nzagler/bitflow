@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const qbittorrentSchema = z.object({
   hostUrl: z.string().trim().url().or(z.literal("")),
+  urlBase: z.string().trim().max(500).refine((value) => value === "" || value.startsWith("/"), "URL base must be empty or start with /"),
   apiKey: z.string().trim().max(500),
   throttledUploadLimit: z.coerce.number().int().min(1).max(10_000_000_000),
   throttledDownloadLimit: z.coerce.number().int().min(1).max(10_000_000_000),

@@ -6,21 +6,27 @@ type Limits = {
   download: number;
 };
 
-function buildBaseUrl(hostUrl: string) {
-  return hostUrl.replace(/\/+$/, "");
+function buildBaseUrl(hostUrl: string, urlBase = "") {
+  const normalizedHost = hostUrl.replace(/\/+$/, "");
+  const normalizedBase = urlBase ? `/${urlBase.replace(/^\/+|\/+$/g, "")}` : "";
+  return `${normalizedHost}${normalizedBase}`;
 }
 
-function buildAuthHeaders(apiKey: string) {
+function buildAuthHeaders(apiKey: string): Record<string, string> {
+  if (!apiKey) {
+    return {};
+  }
+
   return {
     Authorization: `Bearer ${apiKey}`
   };
 }
 
-async function sendForm(hostUrl: string, apiKey: string, path: string, body: Record<string, string>) {
-  const response = await fetch(`${buildBaseUrl(hostUrl)}${path}`, {
+async function sendForm(settings: Pick<QbittorrentSettings, "hostUrl" | "urlBase" | "apiKey">, path: string, body: Record<string, string>) {
+  const response = await fetch(`${buildBaseUrl(settings.hostUrl, settings.urlBase)}${path}`, {
     method: "POST",
     headers: {
-      ...buildAuthHeaders(apiKey),
+      ...buildAuthHeaders(settings.apiKey),
       "Content-Type": "application/x-www-form-urlencoded"
     },
     body: new URLSearchParams(body)
@@ -35,12 +41,12 @@ export async function testQbittorrentConnection() {
   return testQbittorrentConnectionWithSettings(getQbittorrentSettings());
 }
 
-export async function testQbittorrentConnectionWithSettings(settings: Pick<QbittorrentSettings, "hostUrl" | "apiKey">) {
-  if (!settings.hostUrl || !settings.apiKey) {
-    throw new Error("qBittorrent host URL and API key are required");
+export async function testQbittorrentConnectionWithSettings(settings: Pick<QbittorrentSettings, "hostUrl" | "urlBase" | "apiKey">) {
+  if (!settings.hostUrl) {
+    throw new Error("qBittorrent host URL is required");
   }
 
-  const response = await fetch(`${buildBaseUrl(settings.hostUrl)}/api/v2/app/version`, {
+  const response = await fetch(`${buildBaseUrl(settings.hostUrl, settings.urlBase)}/api/v2/app/version`, {
     headers: buildAuthHeaders(settings.apiKey)
   });
 
@@ -74,16 +80,16 @@ function getLimitsForMode(mode: QbittorrentMode) {
 
 export async function applyQbittorrentMode(mode: Exclude<QbittorrentMode, "unknown">) {
   const settings = getQbittorrentSettings();
-  if (!settings.hostUrl || !settings.apiKey) {
+  if (!settings.hostUrl) {
     throw new Error("qBittorrent is not configured");
   }
 
   const limits = getLimitsForMode(mode);
 
-  await sendForm(settings.hostUrl, settings.apiKey, "/api/v2/transfer/setUploadLimit", {
+  await sendForm(settings, "/api/v2/transfer/setUploadLimit", {
     limit: String(limits.upload)
   });
-  await sendForm(settings.hostUrl, settings.apiKey, "/api/v2/transfer/setDownloadLimit", {
+  await sendForm(settings, "/api/v2/transfer/setDownloadLimit", {
     limit: String(limits.download)
   });
 

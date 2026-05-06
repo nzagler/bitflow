@@ -2,6 +2,7 @@ export type QbittorrentMode = "throttled" | "normal" | "unknown";
 
 export type QbittorrentSettings = {
   hostUrl: string;
+  urlBase: string;
   apiKey: string;
   throttledUploadLimit: number;
   throttledDownloadLimit: number;
@@ -43,6 +44,7 @@ export type AppState = {
   qbittorrentMode: QbittorrentMode;
   lastWebhookAt: string | null;
   lastDeviceActivityAt: string | null;
+  lastManualThrottleAt: string | null;
   lastThrottleActionAt: string | null;
   lastThrottleAction: string | null;
   lastQbittorrentConnectionAt: string | null;
