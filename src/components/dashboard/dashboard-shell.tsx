@@ -42,7 +42,15 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
     }
   });
 
-  const payload = (await response.json()) as ApiEnvelope<T>;
+  const responseBody = await response.text();
+  let payload: ApiEnvelope<T>;
+
+  try {
+    payload = JSON.parse(responseBody) as ApiEnvelope<T>;
+  } catch {
+    throw new Error(`Server returned an invalid response (${response.status} ${response.statusText})`);
+  }
+
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error ?? "Request failed");
   }
@@ -217,7 +225,7 @@ export function DashboardShell() {
             <Button
               variant={snapshot.state.automationPaused ? "default" : "destructive"}
               onClick={() => void runAction(
-                "/api/actions/pause",
+                "/api/settings/automation",
                 snapshot.state.automationPaused ? "DELETE" : "POST",
                 undefined,
                 snapshot.state.automationPaused ? "Automation resumed" : "Emergency pause enabled; normal limits restored"
