@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { Activity, Copy, MoonStar, PlayCircle, RefreshCcw, Router, Save, SunMedium, TestTube2, Wifi } from "lucide-react";
+import { Activity, CirclePause, CirclePlay, Copy, MoonStar, PlayCircle, RefreshCcw, Router, Save, SunMedium, TestTube2, Wifi } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -201,7 +201,9 @@ export function DashboardShell() {
         <header className="flex flex-col gap-4 rounded-3xl border bg-card/80 p-6 shadow-sm backdrop-blur md:flex-row md:items-center md:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2">
-              <Badge variant="default">Automation</Badge>
+              <Badge variant={snapshot.state.automationPaused ? "destructive" : "default"}>
+                Automation {snapshot.state.automationPaused ? "paused" : "active"}
+              </Badge>
               <Badge variant={snapshot.state.qbittorrentMode === "throttled" ? "warning" : "success"}>
                 qBittorrent {snapshot.state.qbittorrentMode}
               </Badge>
@@ -212,6 +214,18 @@ export function DashboardShell() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant={snapshot.state.automationPaused ? "default" : "destructive"}
+              onClick={() => void runAction(
+                "/api/actions/pause",
+                snapshot.state.automationPaused ? "DELETE" : "POST",
+                undefined,
+                snapshot.state.automationPaused ? "Automation resumed" : "Emergency pause enabled; normal limits restored"
+              )}
+            >
+              {snapshot.state.automationPaused ? <CirclePlay className="h-4 w-4" /> : <CirclePause className="h-4 w-4" />}
+              {snapshot.state.automationPaused ? "Resume automation" : "Emergency pause"}
+            </Button>
             <Button variant="outline" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <SunMedium className="h-4 w-4" /> : <MoonStar className="h-4 w-4" />}
               Theme
@@ -229,8 +243,8 @@ export function DashboardShell() {
           <StatusCard title="qBittorrent" value={snapshot.state.qbittorrentMode} hint={snapshot.state.lastThrottleAction ?? "No action applied yet"} icon={Wifi} active={snapshot.state.qbittorrentMode === "throttled"} />
           <StatusCard
             title="Controller"
-            value={snapshot.derived.streamingActive || snapshot.derived.devicesActive ? "Active" : snapshot.derived.cooldownActive ? "Cooldown" : "Normal"}
-            hint={snapshot.derived.cooldownActive ? `Unthrottle cooldown: ${formatDuration(liveCooldownRemainingSeconds)}` : `Last evaluation: ${formatDateTime(snapshot.state.lastEvaluatedAt)}`}
+            value={snapshot.state.automationPaused ? "Paused" : snapshot.derived.streamingActive || snapshot.derived.devicesActive ? "Active" : snapshot.derived.cooldownActive ? "Cooldown" : "Normal"}
+            hint={snapshot.state.automationPaused ? "Throttling is disabled until resumed" : snapshot.derived.cooldownActive ? `Unthrottle cooldown: ${formatDuration(liveCooldownRemainingSeconds)}` : `Last evaluation: ${formatDateTime(snapshot.state.lastEvaluatedAt)}`}
             icon={Activity}
             active={snapshot.derived.effectiveActive}
           />
@@ -254,7 +268,7 @@ export function DashboardShell() {
                   <CardDescription>Manual actions and quick tests for each subsystem.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <ActionButton onClick={() => void runAction("/api/actions/force-throttle", "POST", undefined, "Throttle applied")}>Force throttle</ActionButton>
+                  <ActionButton disabled={snapshot.state.automationPaused} onClick={() => void runAction("/api/actions/force-throttle", "POST", undefined, "Throttle applied")}>Force throttle</ActionButton>
                   <ActionButton onClick={() => void runAction("/api/actions/force-unthrottle", "POST", undefined, "Normal limits restored")}>Force unthrottle</ActionButton>
                   <ActionButton onClick={() => void runAction("/api/settings/qbittorrent/test", "POST", undefined, "qBittorrent connection OK")}>Test qBittorrent</ActionButton>
                   <ActionButton onClick={() => void runAction("/api/settings/webhook/test", "POST", undefined, "Webhook test registered")}>Test webhook</ActionButton>
@@ -606,9 +620,9 @@ function StatusCard({
   );
 }
 
-function ActionButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+function ActionButton({ children, onClick, disabled = false }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
-    <Button variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left" onClick={onClick}>
+    <Button variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left" onClick={onClick} disabled={disabled}>
       <div className="flex items-center gap-3">
         <div className="rounded-xl bg-primary/10 p-2 text-primary">
           <TestTube2 className="h-4 w-4" />

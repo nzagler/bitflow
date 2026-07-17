@@ -41,6 +41,7 @@ export type DeviceRecord = {
 
 export type AppState = {
   id: number;
+  automationPaused: boolean;
   qbittorrentMode: QbittorrentMode;
   lastWebhookAt: string | null;
   lastDeviceActivityAt: string | null;
@@ -70,6 +71,7 @@ export type DashboardSnapshot = {
   devices: DeviceRecord[];
   recentLogs: LogRecord[];
   derived: {
+    automationPaused: boolean;
     streamingActive: boolean;
     devicesActive: boolean;
     cooldownActive: boolean;

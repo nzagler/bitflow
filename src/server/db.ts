@@ -45,6 +45,7 @@ const DEFAULT_MONITORING: DeviceMonitoringSettings = {
 
 const DEFAULT_STATE: AppState = {
   id: 1,
+  automationPaused: false,
   qbittorrentMode: "unknown",
   lastWebhookAt: null,
   lastDeviceActivityAt: null,
@@ -98,6 +99,7 @@ export function initializeDatabase() {
 
     CREATE TABLE IF NOT EXISTS app_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
+      automation_paused INTEGER NOT NULL DEFAULT 0,
       qbittorrent_mode TEXT NOT NULL,
       last_webhook_at TEXT,
       last_device_activity_at TEXT,
@@ -120,6 +122,7 @@ export function initializeDatabase() {
   `);
 
   ensureColumn("app_state", "last_manual_throttle_at", "TEXT");
+  ensureColumn("app_state", "automation_paused", "INTEGER NOT NULL DEFAULT 0");
 
   // Older versions stored raw Jellyfin webhook payloads in log metadata.
   // Clear that metadata on startup so playback/user details are not retained.
@@ -139,6 +142,7 @@ export function initializeDatabase() {
     database.prepare(`
       INSERT INTO app_state (
         id,
+        automation_paused,
         qbittorrent_mode,
         last_webhook_at,
         last_device_activity_at,
@@ -150,6 +154,7 @@ export function initializeDatabase() {
         last_evaluated_at
       ) VALUES (
         @id,
+        @automationPaused,
         @qbittorrentMode,
         @lastWebhookAt,
         @lastDeviceActivityAt,
@@ -160,7 +165,7 @@ export function initializeDatabase() {
         @lastQbittorrentError,
         @lastEvaluatedAt
       )
-    `).run(DEFAULT_STATE);
+    `).run({ ...DEFAULT_STATE, automationPaused: 0 });
   }
 
   return database;
@@ -373,6 +378,7 @@ export function getState(): AppState {
   const row = getDb().prepare(`
     SELECT
       id,
+      automation_paused as automationPaused,
       qbittorrent_mode as qbittorrentMode,
       last_webhook_at as lastWebhookAt,
       last_device_activity_at as lastDeviceActivityAt,
@@ -386,7 +392,7 @@ export function getState(): AppState {
     WHERE id = 1
   `).get() as AppState | undefined;
 
-  return row ?? DEFAULT_STATE;
+  return row ? { ...row, automationPaused: Boolean(row.automationPaused) } : DEFAULT_STATE;
 }
 
 export function updateState(partial: Partial<AppState>) {
@@ -399,6 +405,7 @@ export function updateState(partial: Partial<AppState>) {
 
   getDb().prepare(`
     UPDATE app_state SET
+      automation_paused = @automationPaused,
       qbittorrent_mode = @qbittorrentMode,
       last_webhook_at = @lastWebhookAt,
       last_device_activity_at = @lastDeviceActivityAt,
@@ -409,7 +416,7 @@ export function updateState(partial: Partial<AppState>) {
       last_qbittorrent_error = @lastQbittorrentError,
       last_evaluated_at = @lastEvaluatedAt
     WHERE id = 1
-  `).run(next);
+  `).run({ ...next, automationPaused: next.automationPaused ? 1 : 0 });
 
   return next;
 }
@@ -515,11 +522,12 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     devices,
     recentLogs: getLogs(),
     derived: {
+      automationPaused: state.automationPaused,
       streamingActive,
       devicesActive,
       cooldownActive,
       cooldownRemainingSeconds,
-      effectiveActive: streamingActive || devicesActive || cooldownActive,
+      effectiveActive: !state.automationPaused && (streamingActive || devicesActive || cooldownActive),
       webhookUrlPath: `/api/webhook/${webhook.token}`
     }
   };

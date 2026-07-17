@@ -84,7 +84,7 @@ export function computeEffectiveActivity(now = Date.now()) {
     streamingActive,
     devicesActive,
     cooldownActive,
-    effectiveActive: streamingActive || devicesActive || cooldownActive
+    effectiveActive: !state.automationPaused && (streamingActive || devicesActive || cooldownActive)
   };
 }
 
@@ -97,7 +97,7 @@ export async function evaluateAutomation(reason = "scheduler") {
   try {
     const currentState = getState();
     const activity = computeEffectiveActivity();
-    const desiredMode = activity.effectiveActive ? "throttled" : "normal";
+    const desiredMode = currentState.automationPaused ? "normal" : activity.effectiveActive ? "throttled" : "normal";
     const qbittorrent = getQbittorrentSettings();
 
     updateState({

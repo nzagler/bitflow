@@ -6,6 +6,8 @@ type Limits = {
   download: number;
 };
 
+let modeApplicationQueue: Promise<void> = Promise.resolve();
+
 function buildBaseUrl(hostUrl: string, urlBase = "") {
   const normalizedHost = hostUrl.replace(/\/+$/, "");
   const normalizedBase = urlBase ? `/${urlBase.replace(/^\/+|\/+$/g, "")}` : "";
@@ -78,7 +80,7 @@ function getLimitsForMode(mode: QbittorrentMode) {
   };
 }
 
-export async function applyQbittorrentMode(mode: Exclude<QbittorrentMode, "unknown">) {
+async function applyQbittorrentModeNow(mode: Exclude<QbittorrentMode, "unknown">) {
   const settings = getQbittorrentSettings();
   if (!settings.hostUrl) {
     throw new Error("qBittorrent is not configured");
@@ -102,4 +104,10 @@ export async function applyQbittorrentMode(mode: Exclude<QbittorrentMode, "unkno
   });
 
   return limits;
+}
+
+export function applyQbittorrentMode(mode: Exclude<QbittorrentMode, "unknown">) {
+  const application = modeApplicationQueue.then(() => applyQbittorrentModeNow(mode));
+  modeApplicationQueue = application.then(() => undefined, () => undefined);
+  return application;
 }
