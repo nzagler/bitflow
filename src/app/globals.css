@@ -3,54 +3,55 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 9%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --primary: 205 84% 36%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 204 33% 93%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 151 55% 93%;
-  --accent-foreground: 151 55% 20%;
+  --card-foreground: 0 0% 9%;
+  --primary: 0 0% 13%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 13%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 13%;
   --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214 32% 88%;
-  --input: 214 32% 88%;
-  --ring: 205 84% 36%;
-  --radius: 1rem;
-  --font-sans: "Manrope", "Segoe UI", sans-serif;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 0 0% 64%;
+  --radius: 0.625rem;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .dark {
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --card: 223 47% 14%;
-  --card-foreground: 210 40% 98%;
-  --primary: 191 91% 55%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217 33% 20%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217 33% 18%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 166 60% 17%;
-  --accent-foreground: 166 78% 82%;
-  --destructive: 0 72% 51%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 216 34% 24%;
-  --input: 216 34% 24%;
-  --ring: 191 91% 55%;
+  --background: 0 0% 4%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 9%;
+  --card-foreground: 0 0% 98%;
+  --primary: 0 0% 92%;
+  --primary-foreground: 0 0% 13%;
+  --secondary: 0 0% 15%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 22%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 17%;
+  --input: 0 0% 20%;
+  --ring: 0 0% 45%;
 }
 
 body {
   @apply bg-background text-foreground antialiased;
-  background-image:
-    radial-gradient(circle at top, rgba(14, 165, 233, 0.15), transparent 32%),
-    radial-gradient(circle at right, rgba(34, 197, 94, 0.12), transparent 30%);
 }
 
 * {
   @apply border-border;
+}
+
+::selection {
+  @apply bg-foreground/15 text-foreground;
 }
