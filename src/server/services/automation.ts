@@ -1,6 +1,8 @@
 import ping from "ping";
-import { addLog, getAutomationSettings, getDevices, getMonitoringSettings, getQbittorrentSettings, getState, getWebhookSettings, markDevicePing, updateState } from "@/server/db";
-import { applyQbittorrentMode } from "@/server/services/qbittorrent";
+import { addLog, getAutomationSettings, getBackrestSettings, getDevices, getMonitoringSettings, getQbittorrentSettings, getState, getWebhookSettings, markDevicePing, updateState } from "@/server/db";
+import { computeActivity } from "@/server/services/activity";
+import { pollBackrestActivity } from "@/server/services/backrest";
+import { ensureQbittorrentMode } from "@/server/services/qbittorrent";
 
 let started = false;
 let pingTimer: NodeJS.Timeout | null = null;
@@ -51,41 +53,7 @@ export function computeEffectiveActivity(now = Date.now()) {
   const webhook = getWebhookSettings();
   const monitoring = getMonitoringSettings();
   const automation = getAutomationSettings();
-  const cooldownMs = automation.inactivityTimeoutMinutes * 60 * 1000;
-
-  const streamingActive = Boolean(
-    webhook.enabled &&
-    state.lastWebhookAt &&
-    now - new Date(state.lastWebhookAt).getTime() <= webhook.activityWindowSeconds * 1000
-  );
-
-  const deviceRecentlySeen = Boolean(
-    monitoring.enabled &&
-    state.lastDeviceActivityAt &&
-    now - new Date(state.lastDeviceActivityAt).getTime() <= Math.max(automation.pingIntervalSeconds * 2 * 1000, 15_000)
-  );
-
-  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt, state.lastManualThrottleAt]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => new Date(value).getTime())
-    .filter((value) => !Number.isNaN(value))
-    .sort((left, right) => right - left)[0];
-
-  const cooldownActive = Boolean(
-    latestActivityAt &&
-    now - latestActivityAt <= cooldownMs
-  );
-
-  const devicesActive = Boolean(
-    monitoring.enabled && deviceRecentlySeen
-  );
-
-  return {
-    streamingActive,
-    devicesActive,
-    cooldownActive,
-    effectiveActive: !state.automationPaused && (streamingActive || devicesActive || cooldownActive)
-  };
+  return computeActivity({ state, webhook, monitoring, automation, backrest: getBackrestSettings() }, now);
 }
 
 export async function evaluateAutomation(reason = "scheduler") {
@@ -95,6 +63,7 @@ export async function evaluateAutomation(reason = "scheduler") {
 
   evaluationInFlight = true;
   try {
+    await pollBackrestActivity();
     const currentState = getState();
     const activity = computeEffectiveActivity();
     const desiredMode = currentState.automationPaused ? "normal" : activity.effectiveActive ? "throttled" : "normal";
@@ -114,12 +83,11 @@ export async function evaluateAutomation(reason = "scheduler") {
       return;
     }
 
-    if (currentState.qbittorrentMode === desiredMode) {
-      return;
-    }
+    if (currentState.automationPaused && currentState.qbittorrentMode === "normal") return;
 
     try {
-      const limits = await applyQbittorrentMode(desiredMode);
+      const limits = await ensureQbittorrentMode(desiredMode);
+      if (!limits) return;
       addLog(
         "info",
         desiredMode === "throttled" ? "throttle_applied" : "throttle_restored",

@@ -18,6 +18,7 @@ import {
   Copy,
   Gauge,
   History,
+  HardDrive,
   LayoutDashboard,
   LoaderCircle,
   Moon,
@@ -90,6 +91,7 @@ type ApiEnvelope<T> = {
 };
 
 type QbForm = DashboardSnapshot["qbittorrent"] & { apiKey: string };
+type BackrestForm = DashboardSnapshot["backrest"] & { password: string };
 type WebhookForm = DashboardSnapshot["webhook"] & { secret: string };
 type DeviceFormState = {
   id?: number;
@@ -100,10 +102,11 @@ type DeviceFormState = {
 type DashboardTab =
   | "overview"
   | "qbittorrent"
-  | "webhook"
-  | "devices"
+  | "sources"
   | "automation"
   | "activity";
+
+type ActivitySourceTab = "webhook" | "devices" | "backrest";
 
 const navigation: Array<{
   value: DashboardTab;
@@ -124,16 +127,10 @@ const navigation: Array<{
     icon: Gauge
   },
   {
-    value: "webhook",
-    label: "Jellyfin webhook",
-    description: "Playback activity trigger",
-    icon: Webhook
-  },
-  {
-    value: "devices",
-    label: "Devices",
-    description: "Network presence checks",
-    icon: Router
+    value: "sources",
+    label: "Activity sources",
+    description: "Jellyfin, devices and backups",
+    icon: Cable
   },
   {
     value: "automation",
@@ -179,6 +176,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 export function DashboardShell() {
   const { resolvedTheme, setTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
+  const [sourceTab, setSourceTab] = useState<ActivitySourceTab>("webhook");
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -189,6 +187,7 @@ export function DashboardShell() {
     useState<AutomationSettings | null>(null);
   const [monitoringForm, setMonitoringForm] =
     useState<DeviceMonitoringSettings | null>(null);
+  const [backrestForm, setBackrestForm] = useState<BackrestForm | null>(null);
   const [deviceDialogOpen, setDeviceDialogOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState<DeviceFormState>({
     name: "",
@@ -219,6 +218,7 @@ export function DashboardShell() {
       );
       setAutomationForm((current) => current ?? data.automation);
       setMonitoringForm((current) => current ?? data.monitoring);
+      setBackrestForm((current) => current ?? { ...data.backrest, password: data.backrest.passwordConfigured ? MASKED_SECRET_VALUE : "" });
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to load dashboard"
@@ -256,7 +256,8 @@ export function DashboardShell() {
     const lastActivityTimes = [
       snapshot.state.lastWebhookAt,
       snapshot.state.lastDeviceActivityAt,
-      snapshot.state.lastManualThrottleAt
+      snapshot.state.lastManualThrottleAt,
+      snapshot.backrest.enabled ? snapshot.state.lastBackrestActivityAt : null
     ]
       .filter((value): value is string => Boolean(value))
       .map((value) => new Date(value).getTime())
@@ -296,6 +297,7 @@ export function DashboardShell() {
         );
       }
 
+      if (key === "backrest") setBackrestForm((current) => current && { ...current, password: current.password ? MASKED_SECRET_VALUE : "" });
       toast.success("Settings saved");
       await refresh();
     } catch (error) {
@@ -377,16 +379,18 @@ export function DashboardShell() {
     !qbForm ||
     !webhookForm ||
     !automationForm ||
-    !monitoringForm
+    !monitoringForm ||
+    !backrestForm
   ) {
     return <DashboardSkeleton />;
   }
 
   const activeNavigation =
     navigation.find((item) => item.value === activeTab) ?? navigation[0];
+  const activityPresent = snapshot.derived.streamingActive || snapshot.derived.devicesActive || snapshot.derived.backrestActive;
   const controllerState = snapshot.state.automationPaused
     ? "Paused"
-    : snapshot.derived.streamingActive || snapshot.derived.devicesActive
+    : activityPresent
       ? "Active"
       : snapshot.derived.cooldownActive
         ? "Cooldown"
@@ -435,7 +439,7 @@ export function DashboardShell() {
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {snapshot.state.automationPaused
                   ? "Normal bandwidth limits are restored."
-                  : "Jellyfin and device signals are being evaluated."}
+                  : "Jellyfin, device and enabled Backrest signals are being evaluated."}
               </p>
             </CardContent>
           </Card>
@@ -579,7 +583,7 @@ export function DashboardShell() {
               </Badge>
             </PageIntro>
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <StatusCard
                 title="Streaming"
                 value={snapshot.derived.streamingActive ? "Active" : "Idle"}
@@ -595,6 +599,14 @@ export function DashboardShell() {
                 hint={`Last activity ${formatDateTime(snapshot.state.lastDeviceActivityAt)}`}
                 icon={Network}
                 active={snapshot.derived.devicesActive}
+              />
+              <StatusCard
+                title="Backrest"
+                value={!snapshot.backrest.enabled ? "Disabled" : snapshot.derived.backrestActive ? "Backup active" : snapshot.state.lastBackrestError ? "Unavailable" : "Idle"}
+                hint={snapshot.state.lastBackrestError ?? `Last checked ${formatDateTime(snapshot.state.lastBackrestPollAt)}`}
+                icon={HardDrive}
+                active={snapshot.derived.backrestActive}
+                warning={Boolean(snapshot.state.lastBackrestError)}
               />
               <StatusCard
                 title="qBittorrent"
@@ -613,13 +625,15 @@ export function DashboardShell() {
                 hint={
                   snapshot.state.automationPaused
                     ? "Throttling disabled until resumed"
+                    : activityPresent
+                      ? "Activity is using the shared throttled profile"
                     : snapshot.derived.cooldownActive
                       ? `Cooldown ${formatDuration(liveCooldownRemainingSeconds)} remaining`
                       : `Evaluated ${formatDateTime(snapshot.state.lastEvaluatedAt)}`
                 }
                 icon={Activity}
                 active={snapshot.derived.effectiveActive}
-                warning={snapshot.derived.cooldownActive}
+                warning={!activityPresent && snapshot.derived.cooldownActive}
               />
             </div>
 
@@ -865,14 +879,14 @@ export function DashboardShell() {
                 <CardHeader>
                   <CardTitle>Bandwidth profiles</CardTitle>
                   <CardDescription>
-                    qBittorrent expects limits in bytes per second. Use 0 for
-                    unlimited.
+                    Limits are in bytes per second. A 1,024 B/s limit is
+                    1 KiB/s. Torrents stay running while throttled.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <ProfileFields
                     title="Throttled"
-                    description="Applied while playback or device activity is detected."
+                    description="Shared by Jellyfin activity, network devices and Backrest backups."
                   >
                     <Field label="Download (B/s)" htmlFor="qb-throttle-down">
                       <Input
@@ -970,352 +984,427 @@ export function DashboardShell() {
             />
           </TabsContent>
 
-          <TabsContent value="webhook" className="mt-0 space-y-6">
+          <TabsContent value="sources" className="mt-0 space-y-6">
             <PageIntro
-              eyebrow="Integration"
-              title="Jellyfin webhook"
-              description="Receive playback events from Jellyfin and keep the throttled profile active during streaming."
-            >
-              <Button
-                variant="outline"
-                onClick={() =>
-                  void runAction(
-                    "/api/settings/webhook/test",
-                    "POST",
-                    undefined,
-                    "Webhook test registered"
-                  )
-                }
-              >
-                <TestTube2 className="h-4 w-4" />
-                Test reception
-              </Button>
-            </PageIntro>
-
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Endpoint configuration</CardTitle>
-                  <CardDescription>
-                    Add the generated URL to the Jellyfin webhook plugin.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <SettingToggle
-                    id="webhook-enabled"
-                    label="Enable webhook handling"
-                    description="When disabled, incoming Jellyfin activity is ignored."
-                    checked={webhookForm.enabled}
-                    onCheckedChange={(checked) =>
-                      setWebhookForm(
-                        (current) =>
-                          current && { ...current, enabled: checked }
+              eyebrow="Inputs"
+              title="Activity sources"
+              description="Configure Jellyfin, devices and Backrest. Any active source uses the same throttled profile."
+            />
+            <Tabs value={sourceTab} onValueChange={(value) => setSourceTab(value as ActivitySourceTab)} className="space-y-6">
+              <TabsList aria-label="Activity sources" className="grid h-auto w-full grid-cols-3 sm:w-fit">
+                <TabsTrigger value="webhook" className="gap-2">
+                  <Webhook className="hidden h-4 w-4 sm:block" /> Jellyfin
+                </TabsTrigger>
+                <TabsTrigger value="devices" className="gap-2">
+                  <Router className="hidden h-4 w-4 sm:block" /> Devices
+                </TabsTrigger>
+                <TabsTrigger value="backrest" className="gap-2">
+                  <HardDrive className="hidden h-4 w-4 sm:block" /> Backrest
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="webhook" className="mt-0 space-y-6">
+                <PageIntro
+                  eyebrow="Integration"
+                  title="Jellyfin webhook"
+                  description="Receive playback events from Jellyfin and keep the throttled profile active during streaming."
+                >
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      void runAction(
+                        "/api/settings/webhook/test",
+                        "POST",
+                        undefined,
+                        "Webhook test registered"
                       )
                     }
-                  />
-                  <Field label="Webhook URL" htmlFor="webhook-url">
-                    <div className="flex gap-2">
-                      <Input id="webhook-url" readOnly value={webhookUrl} />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        aria-label="Copy webhook URL"
-                        onClick={() => void copyWebhookUrl()}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </Field>
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <Field
-                      label="Token / route segment"
-                      htmlFor="webhook-token"
-                    >
-                      <Input
-                        id="webhook-token"
-                        value={webhookForm.token}
-                        onChange={(event) =>
-                          setWebhookForm(
-                            (current) =>
-                              current && {
-                                ...current,
-                                token: event.target.value
-                              }
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label="Shared secret"
-                      htmlFor="webhook-secret"
-                      hint="Optional request authentication."
-                    >
-                      <Input
-                        id="webhook-secret"
-                        type="password"
-                        value={webhookForm.secret}
-                        placeholder={
-                          snapshot.webhook.secretConfigured
-                            ? "Saved secret"
-                            : "Optional"
-                        }
-                        onChange={(event) =>
-                          setWebhookForm(
-                            (current) =>
-                              current && {
-                                ...current,
-                                secret: event.target.value
-                              }
-                          )
-                        }
-                      />
-                    </Field>
-                  </div>
-                  <Field
-                    label="Activity window (seconds)"
-                    htmlFor="webhook-window"
-                    hint="How long a playback event is considered active."
                   >
-                    <Input
-                      id="webhook-window"
-                      type="number"
-                      min={1}
-                      value={webhookForm.activityWindowSeconds}
-                      onChange={(event) =>
-                        setWebhookForm(
-                          (current) =>
-                            current && {
-                              ...current,
-                              activityWindowSeconds:
-                                Number(event.target.value) || 0
+                    <TestTube2 className="h-4 w-4" />
+                    Test reception
+                  </Button>
+                </PageIntro>
+
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Endpoint configuration</CardTitle>
+                      <CardDescription>
+                        Add the generated URL to the Jellyfin webhook plugin.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                      <SettingToggle
+                        id="webhook-enabled"
+                        label="Enable webhook handling"
+                        description="When disabled, incoming Jellyfin activity is ignored."
+                        checked={webhookForm.enabled}
+                        onCheckedChange={(checked) =>
+                          setWebhookForm(
+                            (current) =>
+                              current && { ...current, enabled: checked }
+                          )
+                        }
+                      />
+                      <Field label="Webhook URL" htmlFor="webhook-url">
+                        <div className="flex gap-2">
+                          <Input id="webhook-url" readOnly value={webhookUrl} />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            aria-label="Copy webhook URL"
+                            onClick={() => void copyWebhookUrl()}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </Field>
+                      <div className="grid gap-5 sm:grid-cols-2">
+                        <Field
+                          label="Token / route segment"
+                          htmlFor="webhook-token"
+                        >
+                          <Input
+                            id="webhook-token"
+                            value={webhookForm.token}
+                            onChange={(event) =>
+                              setWebhookForm(
+                                (current) =>
+                                  current && {
+                                    ...current,
+                                    token: event.target.value
+                                  }
+                              )
                             }
-                        )
+                          />
+                        </Field>
+                        <Field
+                          label="Shared secret"
+                          htmlFor="webhook-secret"
+                          hint="Optional request authentication."
+                        >
+                          <Input
+                            id="webhook-secret"
+                            type="password"
+                            value={webhookForm.secret}
+                            placeholder={
+                              snapshot.webhook.secretConfigured
+                                ? "Saved secret"
+                                : "Optional"
+                            }
+                            onChange={(event) =>
+                              setWebhookForm(
+                                (current) =>
+                                  current && {
+                                    ...current,
+                                    secret: event.target.value
+                                  }
+                              )
+                            }
+                          />
+                        </Field>
+                      </div>
+                      <Field
+                        label="Activity window (seconds)"
+                        htmlFor="webhook-window"
+                        hint="How long a playback event is considered active."
+                      >
+                        <Input
+                          id="webhook-window"
+                          type="number"
+                          min={1}
+                          value={webhookForm.activityWindowSeconds}
+                          onChange={(event) =>
+                            setWebhookForm(
+                              (current) =>
+                                current && {
+                                  ...current,
+                                  activityWindowSeconds:
+                                    Number(event.target.value) || 0
+                                }
+                            )
+                          }
+                        />
+                      </Field>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="h-fit">
+                    <CardHeader>
+                      <CardTitle>Webhook health</CardTitle>
+                      <CardDescription>
+                        Latest activity received by Bitflow.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Status</span>
+                        <Badge
+                          variant={webhookForm.enabled ? "success" : "secondary"}
+                        >
+                          {webhookForm.enabled ? "Listening" : "Disabled"}
+                        </Badge>
+                      </div>
+                      <Separator />
+                      <div>
+                        <p className="text-sm text-muted-foreground">
+                          Last webhook
+                        </p>
+                        <p className="mt-1 text-sm font-medium">
+                          {formatDateTime(snapshot.state.lastWebhookAt)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">
+                          Playback signal
+                        </p>
+                        <p className="mt-1 text-sm font-medium">
+                          {snapshot.derived.streamingActive ? "Active" : "Idle"}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <SaveBar
+                  label="Save webhook settings"
+                  saving={saving === "webhook"}
+                  onSave={() =>
+                    void saveSection(
+                      "webhook",
+                      "/api/settings/webhook",
+                      webhookForm
+                    )
+                  }
+                />
+              </TabsContent>
+
+              <TabsContent value="devices" className="mt-0 space-y-6">
+                <PageIntro
+                  eyebrow="Presence"
+                  title="Network devices"
+                  description="Reachable devices can keep qBittorrent throttled until the configured inactivity timeout expires."
+                >
+                  <Dialog
+                    open={deviceDialogOpen}
+                    onOpenChange={setDeviceDialogOpen}
+                  >
+                    <DialogTrigger asChild>
+                      <Button onClick={() => openDeviceDialog()}>
+                        <Router className="h-4 w-4" />
+                        Add device
+                      </Button>
+                    </DialogTrigger>
+                    <DeviceDialog
+                      deviceForm={deviceForm}
+                      setDeviceForm={setDeviceForm}
+                      onSubmit={() => void submitDevice()}
+                    />
+                  </Dialog>
+                </PageIntro>
+
+                <Card>
+                  <CardContent className="p-4 sm:p-5">
+                    <SettingToggle
+                      id="monitoring-enabled"
+                      label="Enable device monitoring"
+                      description="Run periodic ping checks and include reachable devices in automation decisions."
+                      checked={monitoringForm.enabled}
+                      onCheckedChange={(checked) =>
+                        setMonitoringForm({ enabled: checked })
+                      }
+                      action={
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={saving === "monitoring"}
+                          onClick={() =>
+                            void saveSection(
+                              "monitoring",
+                              "/api/settings/monitoring",
+                              monitoringForm
+                            )
+                          }
+                        >
+                          {saving === "monitoring" ? (
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                          Save
+                        </Button>
                       }
                     />
-                  </Field>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
 
-              <Card className="h-fit">
-                <CardHeader>
-                  <CardTitle>Webhook health</CardTitle>
-                  <CardDescription>
-                    Latest activity received by Bitflow.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Status</span>
-                    <Badge
-                      variant={webhookForm.enabled ? "success" : "secondary"}
-                    >
-                      {webhookForm.enabled ? "Listening" : "Disabled"}
-                    </Badge>
-                  </div>
-                  <Separator />
-                  <div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Configured devices</CardTitle>
+                    <CardDescription>
+                      {snapshot.devices.length}{" "}
+                      {snapshot.devices.length === 1 ? "device" : "devices"}{" "}
+                      registered.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto">
+                    {snapshot.devices.length === 0 ? (
+                      <EmptyState
+                        icon={Router}
+                        title="No devices configured"
+                        description="Add a host to start using network presence as an automation signal."
+                        action={
+                          <Button size="sm" onClick={() => openDeviceDialog()}>
+                            Add your first device
+                          </Button>
+                        }
+                      />
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Device</TableHead>
+                            <TableHead>Host</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Last online</TableHead>
+                            <TableHead>Last ping</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {snapshot.devices.map((device) => (
+                            <TableRow key={device.id}>
+                              <TableCell>
+                                <div className="font-medium">{device.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {device.enabled ? "Enabled" : "Disabled"}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {device.host}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    device.lastReachable
+                                      ? "success"
+                                      : "secondary"
+                                  }
+                                >
+                                  <StatusDot active={device.lastReachable} />
+                                  {device.lastReachable ? "Online" : "Offline"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {formatDateTime(device.lastSeenAt)}
+                              </TableCell>
+                              <TableCell>
+                                {formatDateTime(device.lastPingAt)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openDeviceDialog(device)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      void runAction(
+                                        `/api/devices/${device.id}/test`,
+                                        "POST",
+                                        undefined,
+                                        "Ping test completed"
+                                      )
+                                    }
+                                  >
+                                    Ping
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    aria-label={`Delete ${device.name}`}
+                                    onClick={() =>
+                                      void runAction(
+                                        `/api/devices/${device.id}`,
+                                        "DELETE",
+                                        undefined,
+                                        "Device removed"
+                                      )
+                                    }
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="backrest" className="mt-0 space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Backrest backups</CardTitle>
+                    <CardDescription>
+                      Jellyfin activity OR network activity OR a running backup uses the same throttled profile.
+                      All three signals remain active independently.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <SettingToggle id="backrest-enabled" label="Watch Backrest backups"
+                      description="Check backup activity alongside Jellyfin and network devices."
+                      checked={backrestForm.enabled}
+                      onCheckedChange={(enabled) => setBackrestForm((current) => current && { ...current, enabled })} />
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Backrest URL" htmlFor="backrest-url" hint="Use the direct address reachable by Bitflow.">
+                        <Input id="backrest-url" placeholder="http://backrest:9898" value={backrestForm.baseUrl}
+                          onChange={(event) => setBackrestForm((current) => current && { ...current, baseUrl: event.target.value })} />
+                      </Field>
+                      <Field label="Backup plan ID" htmlFor="backrest-plan" hint="The plan whose uploads should trigger throttling.">
+                        <Input id="backrest-plan" value={backrestForm.planId}
+                          onChange={(event) => setBackrestForm((current) => current && { ...current, planId: event.target.value })} />
+                      </Field>
+                      <Field label="Username" htmlFor="backrest-username" hint="Optional, if Backrest requires a login.">
+                        <Input id="backrest-username" autoComplete="off" value={backrestForm.username}
+                          onChange={(event) => setBackrestForm((current) => current && { ...current, username: event.target.value })} />
+                      </Field>
+                      <Field label="Password" htmlFor="backrest-password">
+                        <Input id="backrest-password" type="password" autoComplete="new-password" value={backrestForm.password}
+                          placeholder={snapshot.backrest.passwordConfigured ? "Saved password" : "Optional"}
+                          onChange={(event) => setBackrestForm((current) => current && { ...current, password: event.target.value })} />
+                      </Field>
+                    </div>
                     <p className="text-sm text-muted-foreground">
-                      Last webhook
+                      When a backup ends, Jellyfin, devices and the existing cooldown still decide whether throttling continues.
+                      A failed connection keeps the last backup signal for up to five minutes; the usual cooldown may extend throttling.
                     </p>
-                    <p className="mt-1 text-sm font-medium">
-                      {formatDateTime(snapshot.state.lastWebhookAt)}
+                    <p className="text-sm text-muted-foreground" role="status">
+                      {snapshot.state.lastBackrestError ?? (snapshot.derived.backrestActive ? "Backup is running" : "No active backup detected")}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      Playback signal
-                    </p>
-                    <p className="mt-1 text-sm font-medium">
-                      {snapshot.derived.streamingActive ? "Active" : "Idle"}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <SaveBar
-              label="Save webhook settings"
-              saving={saving === "webhook"}
-              onSave={() =>
-                void saveSection(
-                  "webhook",
-                  "/api/settings/webhook",
-                  webhookForm
-                )
-              }
-            />
-          </TabsContent>
-
-          <TabsContent value="devices" className="mt-0 space-y-6">
-            <PageIntro
-              eyebrow="Presence"
-              title="Network devices"
-              description="Reachable devices can keep qBittorrent throttled until the configured inactivity timeout expires."
-            >
-              <Dialog
-                open={deviceDialogOpen}
-                onOpenChange={setDeviceDialogOpen}
-              >
-                <DialogTrigger asChild>
-                  <Button onClick={() => openDeviceDialog()}>
-                    <Router className="h-4 w-4" />
-                    Add device
-                  </Button>
-                </DialogTrigger>
-                <DeviceDialog
-                  deviceForm={deviceForm}
-                  setDeviceForm={setDeviceForm}
-                  onSubmit={() => void submitDevice()}
-                />
-              </Dialog>
-            </PageIntro>
-
-            <Card>
-              <CardContent className="p-4 sm:p-5">
-                <SettingToggle
-                  id="monitoring-enabled"
-                  label="Enable device monitoring"
-                  description="Run periodic ping checks and include reachable devices in automation decisions."
-                  checked={monitoringForm.enabled}
-                  onCheckedChange={(checked) =>
-                    setMonitoringForm({ enabled: checked })
-                  }
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={saving === "monitoring"}
-                      onClick={() =>
-                        void saveSection(
-                          "monitoring",
-                          "/api/settings/monitoring",
-                          monitoringForm
-                        )
-                      }
-                    >
-                      {saving === "monitoring" ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      Save
+                  </CardContent>
+                  <CardFooter className="flex flex-wrap gap-3">
+                    <Button variant="outline" disabled={saving !== null}
+                      onClick={() => void runAction("/api/settings/backrest/test", "POST", backrestForm, "Backrest connection OK")}>
+                      <TestTube2 className="h-4 w-4" /> Test connection
                     </Button>
-                  }
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Configured devices</CardTitle>
-                <CardDescription>
-                  {snapshot.devices.length}{" "}
-                  {snapshot.devices.length === 1 ? "device" : "devices"}{" "}
-                  registered.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
-                {snapshot.devices.length === 0 ? (
-                  <EmptyState
-                    icon={Router}
-                    title="No devices configured"
-                    description="Add a host to start using network presence as an automation signal."
-                    action={
-                      <Button size="sm" onClick={() => openDeviceDialog()}>
-                        Add your first device
-                      </Button>
-                    }
-                  />
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Device</TableHead>
-                        <TableHead>Host</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Last online</TableHead>
-                        <TableHead>Last ping</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {snapshot.devices.map((device) => (
-                        <TableRow key={device.id}>
-                          <TableCell>
-                            <div className="font-medium">{device.name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {device.enabled ? "Enabled" : "Disabled"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {device.host}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                device.lastReachable
-                                  ? "success"
-                                  : "secondary"
-                              }
-                            >
-                              <StatusDot active={device.lastReachable} />
-                              {device.lastReachable ? "Online" : "Offline"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {formatDateTime(device.lastSeenAt)}
-                          </TableCell>
-                          <TableCell>
-                            {formatDateTime(device.lastPingAt)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openDeviceDialog(device)}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() =>
-                                  void runAction(
-                                    `/api/devices/${device.id}/test`,
-                                    "POST",
-                                    undefined,
-                                    "Ping test completed"
-                                  )
-                                }
-                              >
-                                Ping
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                aria-label={`Delete ${device.name}`}
-                                onClick={() =>
-                                  void runAction(
-                                    `/api/devices/${device.id}`,
-                                    "DELETE",
-                                    undefined,
-                                    "Device removed"
-                                  )
-                                }
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                    <Button disabled={saving !== null}
+                      onClick={() => void saveSection("backrest", "/api/settings/backrest", backrestForm)}>
+                      {saving === "backrest" ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Save Backrest settings
+                    </Button>
+                  </CardFooter>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           <TabsContent value="automation" className="mt-0 space-y-6">
@@ -1401,21 +1490,21 @@ export function DashboardShell() {
               <CardHeader>
                 <CardTitle>How the controller decides</CardTitle>
                 <CardDescription>
-                  A compact view of the automation path described in the
-                  project overview.
+                  Every enabled activity signal is considered on each decision.
+                  Normal speed returns only after all activity and the cooldown end.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
                 <FlowStep
                   number="1"
                   title="Observe"
-                  description="Jellyfin events and optional device pings"
+                  description="Jellyfin OR devices OR Backrest backups"
                 />
                 <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
                 <FlowStep
                   number="2"
                   title="Throttle"
-                  description="Apply the reduced bandwidth profile"
+                  description="Any active signal applies the shared throttled profile"
                 />
                 <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
                 <FlowStep
@@ -1443,7 +1532,7 @@ export function DashboardShell() {
             <PageIntro
               eyebrow="History"
               title="Activity log"
-              description="Webhook, device, and automation events persisted in SQLite across restarts."
+              description="Jellyfin, device, Backrest and automation events persisted across restarts."
             >
               <Button
                 variant="outline"

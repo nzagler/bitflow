@@ -4,6 +4,7 @@ import path from "node:path";
 import { DATABASE_PATH, DEFAULT_WEBHOOK_TOKEN, LOG_LIMIT } from "@/lib/constants";
 import type {
   AppState,
+  BackrestSettings,
   AutomationSettings,
   DashboardSnapshot,
   DeviceMonitoringSettings,
@@ -14,14 +15,16 @@ import type {
 } from "@/lib/types";
 import { decryptSecret, encryptSecret } from "@/server/security";
 
+import { computeActivity } from "@/server/services/activity";
+
 let database: Database.Database | null = null;
 
 const DEFAULT_QBITTORRENT: QbittorrentSettings = {
   hostUrl: "",
   urlBase: "",
   apiKey: "",
-  throttledUploadLimit: 1,
-  throttledDownloadLimit: 1,
+  throttledUploadLimit: 1024,
+  throttledDownloadLimit: 1024,
   normalUploadLimit: 3_000_000,
   normalDownloadLimit: 15_000_000
 };
@@ -31,6 +34,13 @@ const DEFAULT_WEBHOOK: WebhookSettings = {
   token: DEFAULT_WEBHOOK_TOKEN,
   secret: "",
   activityWindowSeconds: 10
+};
+
+const DEFAULT_BACKREST: BackrestSettings = {
+  enabled: process.env.BACKREST_ENABLED === "true",
+  baseUrl: process.env.BACKREST_URL ?? "",
+  planId: process.env.BACKREST_PLAN_ID ?? "appdata",
+  username: "", password: ""
 };
 
 const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -54,7 +64,8 @@ const DEFAULT_STATE: AppState = {
   lastThrottleAction: null,
   lastQbittorrentConnectionAt: null,
   lastQbittorrentError: null,
-  lastEvaluatedAt: null
+  lastEvaluatedAt: null,
+  backrestActive: false, lastBackrestPollAt: null, lastBackrestActivityAt: null, lastBackrestError: null
 };
 
 function getDb() {
@@ -123,6 +134,10 @@ export function initializeDatabase() {
 
   ensureColumn("app_state", "last_manual_throttle_at", "TEXT");
   ensureColumn("app_state", "automation_paused", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("app_state", "backrest_active", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("app_state", "last_backrest_poll_at", "TEXT");
+  ensureColumn("app_state", "last_backrest_activity_at", "TEXT");
+  ensureColumn("app_state", "last_backrest_error", "TEXT");
 
   // Older versions stored raw Jellyfin webhook payloads in log metadata.
   // Clear that metadata on startup so playback/user details are not retained.
@@ -136,6 +151,7 @@ export function initializeDatabase() {
   ensureSetting("webhook", serializeWebhook(DEFAULT_WEBHOOK));
   ensureSetting("automation", JSON.stringify(DEFAULT_AUTOMATION));
   ensureSetting("monitoring", JSON.stringify(DEFAULT_MONITORING));
+  ensureSetting("backrest", JSON.stringify(DEFAULT_BACKREST));
 
   const existingState = database.prepare("SELECT id FROM app_state WHERE id = 1").get();
   if (!existingState) {
@@ -266,6 +282,18 @@ export function saveMonitoringSettings(value: DeviceMonitoringSettings) {
   setSetting("monitoring", JSON.stringify(value));
 }
 
+export function getBackrestSettings(): BackrestSettings {
+  return getSetting("backrest", (raw) => {
+    const data = { ...DEFAULT_BACKREST, ...JSON.parse(raw) };
+    return { ...data, password: data.password ? decryptSecret(data.password) : "" };
+  }, DEFAULT_BACKREST);
+}
+
+export function saveBackrestSettings(value: BackrestSettings) {
+  setSetting("backrest", JSON.stringify({ ...value, password: value.password ? encryptSecret(value.password) : "" }));
+  updateState({ backrestActive: false, lastBackrestPollAt: null, lastBackrestActivityAt: null, lastBackrestError: null });
+}
+
 export function getDevices(): DeviceRecord[] {
   return getDb().prepare(`
     SELECT
@@ -387,12 +415,16 @@ export function getState(): AppState {
       last_throttle_action as lastThrottleAction,
       last_qbittorrent_connection_at as lastQbittorrentConnectionAt,
       last_qbittorrent_error as lastQbittorrentError,
-      last_evaluated_at as lastEvaluatedAt
+      last_evaluated_at as lastEvaluatedAt,
+      backrest_active as backrestActive,
+      last_backrest_poll_at as lastBackrestPollAt,
+      last_backrest_activity_at as lastBackrestActivityAt,
+      last_backrest_error as lastBackrestError
     FROM app_state
     WHERE id = 1
   `).get() as AppState | undefined;
 
-  return row ? { ...row, automationPaused: Boolean(row.automationPaused) } : DEFAULT_STATE;
+  return row ? { ...row, automationPaused: Boolean(row.automationPaused), backrestActive: Boolean(row.backrestActive) } : DEFAULT_STATE;
 }
 
 export function updateState(partial: Partial<AppState>) {
@@ -414,9 +446,13 @@ export function updateState(partial: Partial<AppState>) {
       last_throttle_action = @lastThrottleAction,
       last_qbittorrent_connection_at = @lastQbittorrentConnectionAt,
       last_qbittorrent_error = @lastQbittorrentError,
-      last_evaluated_at = @lastEvaluatedAt
+      last_evaluated_at = @lastEvaluatedAt,
+      backrest_active = @backrestActive,
+      last_backrest_poll_at = @lastBackrestPollAt,
+      last_backrest_activity_at = @lastBackrestActivityAt,
+      last_backrest_error = @lastBackrestError
     WHERE id = 1
-  `).run({ ...next, automationPaused: next.automationPaused ? 1 : 0 });
+  `).run({ ...next, automationPaused: next.automationPaused ? 1 : 0, backrestActive: next.backrestActive ? 1 : 0 });
 
   return next;
 }
@@ -467,38 +503,8 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
   const monitoring = getMonitoringSettings();
   const state = getState();
   const devices = getDevices();
-  const now = Date.now();
-  const cooldownMs = automation.inactivityTimeoutMinutes * 60 * 1000;
-
-  const streamingActive = Boolean(
-    webhook.enabled &&
-    state.lastWebhookAt &&
-    now - new Date(state.lastWebhookAt).getTime() <= webhook.activityWindowSeconds * 1000
-  );
-
-  const deviceRecentlySeen = Boolean(
-    monitoring.enabled &&
-    state.lastDeviceActivityAt &&
-    now - new Date(state.lastDeviceActivityAt).getTime() <= Math.max(automation.pingIntervalSeconds * 2 * 1000, 15_000)
-  );
-
-  const latestActivityAt = [state.lastWebhookAt, state.lastDeviceActivityAt, state.lastManualThrottleAt]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => new Date(value).getTime())
-    .filter((value) => !Number.isNaN(value))
-    .sort((left, right) => right - left)[0];
-
-  const cooldownActive = Boolean(
-    latestActivityAt &&
-    now - latestActivityAt <= cooldownMs
-  );
-  const cooldownRemainingSeconds = latestActivityAt
-    ? Math.max(0, Math.ceil((cooldownMs - (now - latestActivityAt)) / 1000))
-    : 0;
-
-  const devicesActive = Boolean(
-    monitoring.enabled && deviceRecentlySeen
-  );
+  const backrest = getBackrestSettings();
+  const activity = computeActivity({ state, webhook, monitoring, automation, backrest });
 
   return {
     state,
@@ -519,15 +525,12 @@ export function buildDashboardSnapshot(): DashboardSnapshot {
     },
     automation,
     monitoring,
+    backrest: { enabled: backrest.enabled, baseUrl: backrest.baseUrl, planId: backrest.planId, username: backrest.username, passwordConfigured: Boolean(backrest.password) },
     devices,
     recentLogs: getLogs(),
     derived: {
       automationPaused: state.automationPaused,
-      streamingActive,
-      devicesActive,
-      cooldownActive,
-      cooldownRemainingSeconds,
-      effectiveActive: !state.automationPaused && (streamingActive || devicesActive || cooldownActive),
+      ...activity,
       webhookUrlPath: `/api/webhook/${webhook.token}`
     }
   };

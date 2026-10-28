@@ -32,3 +32,14 @@ export const deviceSchema = z.object({
   host: z.string().trim().min(1).max(255),
   enabled: z.coerce.boolean()
 });
+
+export const backrestSchema = z.object({
+  enabled: z.boolean(),
+  baseUrl: z.string().trim().max(2000).refine((value) => {
+    if (!value) return true;
+    try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash; } catch { return false; }
+  }, "Use an HTTP or HTTPS URL without credentials, query parameters or fragments"),
+  planId: z.string().trim().min(1).max(200),
+  username: z.string().max(200),
+  password: z.string().max(1000)
+}).refine((value) => !value.enabled || Boolean(value.baseUrl), { path: ["baseUrl"], message: "Backrest URL is required when enabled" });

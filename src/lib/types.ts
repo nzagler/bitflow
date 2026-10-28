@@ -17,6 +17,14 @@ export type WebhookSettings = {
   activityWindowSeconds: number;
 };
 
+export type BackrestSettings = {
+  enabled: boolean;
+  baseUrl: string;
+  planId: string;
+  username: string;
+  password: string;
+};
+
 export type AutomationSettings = {
   inactivityTimeoutMinutes: number;
   pingIntervalSeconds: number;
@@ -51,6 +59,10 @@ export type AppState = {
   lastQbittorrentConnectionAt: string | null;
   lastQbittorrentError: string | null;
   lastEvaluatedAt: string | null;
+  backrestActive: boolean;
+  lastBackrestPollAt: string | null;
+  lastBackrestActivityAt: string | null;
+  lastBackrestError: string | null;
 };
 
 export type LogRecord = {
@@ -68,12 +80,14 @@ export type DashboardSnapshot = {
   webhook: Omit<WebhookSettings, "secret"> & { secretConfigured: boolean };
   automation: AutomationSettings;
   monitoring: DeviceMonitoringSettings;
+  backrest: Omit<BackrestSettings, "password"> & { passwordConfigured: boolean };
   devices: DeviceRecord[];
   recentLogs: LogRecord[];
   derived: {
     automationPaused: boolean;
     streamingActive: boolean;
     devicesActive: boolean;
+    backrestActive: boolean;
     cooldownActive: boolean;
     cooldownRemainingSeconds: number;
     effectiveActive: boolean;

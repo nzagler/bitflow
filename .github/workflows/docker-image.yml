@@ -20,6 +20,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js for tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install test dependencies
+        run: npm ci
+
+      - name: Verify controller behavior
+        run: npm test
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -42,7 +54,7 @@ jobs:
             type=sha
           labels: |
             org.opencontainers.image.title=Bitflow
-            org.opencontainers.image.description=Self-hosted qBittorrent bandwidth controller for Jellyfin and network activity
+            org.opencontainers.image.description=Self-hosted qBittorrent bandwidth controller for Jellyfin, devices and Backrest backups
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push image

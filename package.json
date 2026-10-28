@@ -2,13 +2,14 @@
   "name": "bitflow",
   "version": "1.0.0",
   "private": true,
-  "description": "Self-hosted qBittorrent throttling automation for Jellyfin and network device activity.",
+  "description": "Self-hosted qBittorrent throttling automation for Jellyfin, network devices, and Backrest backups.",
   "scripts": {
     "dev": "tsx watch server.ts",
     "build": "next build && tsup server.ts --format cjs --target node20 --out-dir dist --external next --external better-sqlite3",
     "start": "node dist/server.js",
     "lint": "next lint",
-    "db:check": "tsx scripts/db-check.ts"
+    "db:check": "tsx scripts/db-check.ts",
+    "test": "node --import tsx tests/activity.test.ts && node --import tsx tests/integration.test.ts && node --import tsx tests/bootstrap.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
